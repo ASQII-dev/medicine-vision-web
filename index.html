@@ -234,7 +234,7 @@
 
       async function uploadFile(file) {
         const formData = new FormData();
-        formData.append("file", file); // Adjust field name as needed by your endpoint
+        formData.append("image", file); // Adjust field name as needed by your endpoint
 
         loading.style.display = "block";
         uploadStatus.textContent = "Uploading...";
@@ -248,7 +248,6 @@
           const response = await fetch(endpoint, {
             method: "POST",
             body: formData,
-            // Don't set Content-Type header - browser will set it with boundary
           });
 
           uploadStatus.textContent = "Processing response...";
