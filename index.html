@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>File Upload to Inference Endpoint</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+
+      .container {
+        background-color: white;
+        border-radius: 8px;
+        padding: 30px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      h1 {
+        color: #333;
+        margin-bottom: 30px;
+      }
+
+      .upload-area {
+        border: 2px dashed #ccc;
+        border-radius: 8px;
+        padding: 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.3s;
+      }
+
+      .upload-area:hover {
+        border-color: #007bff;
+      }
+
+      .upload-area.dragover {
+        border-color: #007bff;
+        background-color: #f0f8ff;
+      }
+
+      .file-input {
+        display: none;
+      }
+
+      .upload-button {
+        background-color: #007bff;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        margin-top: 10px;
+      }
+
+      .upload-button:hover {
+        background-color: #0056b3;
+      }
+
+      .file-info {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        display: none;
+      }
+
+      .response-area {
+        margin-top: 30px;
+        padding: 20px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+        border: 1px solid #dee2e6;
+        display: none;
+      }
+
+      .response-area pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .loading {
+        display: none;
+        margin: 20px 0;
+        text-align: center;
+      }
+
+      .error {
+        color: #dc3545;
+        margin-top: 10px;
+      }
+
+      .success {
+        color: #28a745;
+      }
+
+      .status {
+        margin-top: 10px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>File Upload to Inference Endpoint</h1>
+
+      <div class="upload-area" id="uploadArea">
+        <p>Drag & drop files here or click to select</p>
+        <p style="color: #666; font-size: 14px">
+          Supports: Images, PDFs, Documents (Max: 50MB)
+        </p>
+        <button class="upload-button" id="selectFileBtn">Select File</button>
+        <input type="file" id="fileInput" class="file-input" />
+      </div>
+
+      <div class="file-info" id="fileInfo">
+        <strong>Selected file:</strong> <span id="fileName"></span><br />
+        <strong>File size:</strong> <span id="fileSize"></span><br />
+        <strong>File type:</strong> <span id="fileType"></span>
+      </div>
+
+      <div class="loading" id="loading">
+        <p>Uploading and processing... ⏳</p>
+        <div class="status" id="uploadStatus"></div>
+      </div>
+
+      <div class="response-area" id="responseArea">
+        <h3>Response from server:</h3>
+        <pre id="responseContent"></pre>
+      </div>
+
+      <div id="errorMessage" class="error"></div>
+    </div>
+
+    <script>
+      const uploadArea = document.getElementById("uploadArea");
+      const fileInput = document.getElementById("fileInput");
+      const selectFileBtn = document.getElementById("selectFileBtn");
+      const fileInfo = document.getElementById("fileInfo");
+      const fileName = document.getElementById("fileName");
+      const fileSize = document.getElementById("fileSize");
+      const fileType = document.getElementById("fileType");
+      const loading = document.getElementById("loading");
+      const responseArea = document.getElementById("responseArea");
+      const responseContent = document.getElementById("responseContent");
+      const errorMessage = document.getElementById("errorMessage");
+      const uploadStatus = document.getElementById("uploadStatus");
+
+      const endpoint = "http://102.211.210.139:5000/infer";
+
+      // Prevent default drag behaviors
+      ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+        uploadArea.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+      });
+
+      function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      // Highlight drop area when dragging over it
+      ["dragenter", "dragover"].forEach((eventName) => {
+        uploadArea.addEventListener(eventName, highlight, false);
+      });
+
+      ["dragleave", "drop"].forEach((eventName) => {
+        uploadArea.addEventListener(eventName, unhighlight, false);
+      });
+
+      function highlight() {
+        uploadArea.classList.add("dragover");
+      }
+
+      function unhighlight() {
+        uploadArea.classList.remove("dragover");
+      }
+
+      // Handle dropped files
+      uploadArea.addEventListener("drop", handleDrop, false);
+
+      function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+
+        if (files.length > 0) {
+          handleFiles(files[0]);
+        }
+      }
+
+      // Handle file selection via button/click
+      selectFileBtn.addEventListener("click", () => {
+        fileInput.click();
+      });
+
+      uploadArea.addEventListener("click", () => {
+        fileInput.click();
+      });
+
+      fileInput.addEventListener("change", (e) => {
+        if (e.target.files.length > 0) {
+          handleFiles(e.target.files[0]);
+        }
+      });
+
+      async function handleFiles(file) {
+        // Clear previous responses
+        responseArea.style.display = "none";
+        errorMessage.textContent = "";
+
+        // Check file size (50MB limit)
+        if (file.size > 50 * 1024 * 1024) {
+          errorMessage.textContent = "File too large. Maximum size is 50MB.";
+          return;
+        }
+
+        // Display file info
+        fileName.textContent = file.name;
+        fileSize.textContent = formatFileSize(file.size);
+        fileType.textContent = file.type || "Unknown";
+        fileInfo.style.display = "block";
+
+        // Upload file
+        await uploadFile(file);
+      }
+
+      async function uploadFile(file) {
+        const formData = new FormData();
+        formData.append("file", file); // Adjust field name as needed by your endpoint
+
+        loading.style.display = "block";
+        uploadStatus.textContent = "Uploading...";
+        uploadStatus.className = "status";
+
+        try {
+          console.log("Uploading file:", file.name);
+          console.log("File size:", formatFileSize(file.size));
+          console.log("File type:", file.type);
+
+          const response = await fetch(endpoint, {
+            method: "POST",
+            body: formData,
+            // Don't set Content-Type header - browser will set it with boundary
+          });
+
+          uploadStatus.textContent = "Processing response...";
+
+          console.log("Response status:", response.status);
+          console.log("Response headers:", [...response.headers.entries()]);
+
+          let data;
+          const contentType = response.headers.get("content-type");
+
+          if (contentType && contentType.includes("application/json")) {
+            data = await response.json();
+          } else {
+            // If not JSON, get as text
+            const text = await response.text();
+            try {
+              // Try to parse as JSON anyway
+              data = JSON.parse(text);
+            } catch {
+              data = { message: text };
+            }
+          }
+
+          if (!response.ok) {
+            throw new Error(
+              data.error || `HTTP error! status: ${response.status}`,
+            );
+          }
+
+          // Display success response
+          console.log("Response data:", data);
+          responseContent.textContent = JSON.stringify(data, null, 2);
+          responseArea.style.display = "block";
+          uploadStatus.textContent = "Upload successful!";
+          uploadStatus.className = "status success";
+        } catch (error) {
+          console.error("Error:", error);
+          errorMessage.textContent = `Error: ${error.message}`;
+          uploadStatus.textContent = "Upload failed";
+          uploadStatus.className = "status error";
+
+          // Show error in response area as well
+          responseContent.textContent = JSON.stringify(
+            { error: error.message },
+            null,
+            2,
+          );
+          responseArea.style.display = "block";
+        } finally {
+          loading.style.display = "none";
+        }
+      }
+
+      function formatFileSize(bytes) {
+        if (bytes === 0) return "0 Bytes";
+        const k = 1024;
+        const sizes = ["Bytes", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+      }
+    </script>
+  </body>
+</html>
