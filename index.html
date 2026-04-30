@@ -48,7 +48,7 @@
       }
 
       .response-area h4 {
-      font-size: 18px;
+      font-size: 24px;
       }
 
       .response-area p {
@@ -265,12 +265,12 @@
       : "N/A";
 
       card.innerHTML = `
-      <h4 style="margin: 0 0 10px 0; color: #007bff;">
+      <h4 style="color: #007bff;">
         ${med.nom_fr || "Unknown"}
       </h4>
-      <p><strong>Forme:</strong> ${med.Forme || "N/A"}</p>
-      <p><strong>Dosage:</strong> ${med.dosage || "N/A"}</p>
-      <p><strong>Date AMM:</strong> ${date}</p>
+      <p style="font:18;"><strong>Forme:</strong> ${med.Forme || "N/A"}</p>
+      <p style="font:18;"><strong>Dosage:</strong> ${med.dosage || "N/A"}</p>
+      <p style="font:18;"><strong>Date AMM:</strong> ${date}</p>
       `;
 
       responseContent.appendChild(card);
