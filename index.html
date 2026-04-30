@@ -47,6 +47,14 @@
         display: none;
       }
 
+      .response-area h4 {
+      font-size: 18px;
+      }
+
+      .response-area p {
+       margin: 5px 0;
+       }
+
       .upload-button {
         background-color: #007bff;
         color: white;
@@ -232,6 +240,43 @@
         await uploadFile(file);
       }
 
+      function renderMedicaments(data) {
+      // Clear previous content
+      responseContent.innerHTML = "";
+
+      if (!data.medicaments || data.medicaments.length === 0) {
+        responseContent.innerHTML = "<p>No medications found.</p>";
+        return;
+      }
+
+      data.medicaments.forEach((item) => {
+      const med = item.result;
+
+      const card = document.createElement("div");
+      card.style.border = "1px solid #ddd";
+      card.style.borderRadius = "6px";
+      card.style.padding = "15px";
+      card.style.marginBottom = "15px";
+      card.style.backgroundColor = "#fff";
+
+      // Format date
+      const date = med["Date AMM"]
+      ? new Date(med["Date AMM"]).toLocaleDateString()
+      : "N/A";
+
+      card.innerHTML = `
+      <h4 style="margin: 0 0 10px 0; color: #007bff;">
+        ${med.nom_fr || "Unknown"}
+      </h4>
+      <p><strong>Forme:</strong> ${med.Forme || "N/A"}</p>
+      <p><strong>Dosage:</strong> ${med.dosage || "N/A"}</p>
+      <p><strong>Date AMM:</strong> ${date}</p>
+      `;
+
+      responseContent.appendChild(card);
+      });
+    }
+
       async function uploadFile(file) {
         const formData = new FormData();
         formData.append("image", file); // Adjust field name as needed by your endpoint
@@ -279,7 +324,7 @@
 
           // Display success response
           console.log("Response data:", data);
-          responseContent.textContent = JSON.stringify(data, null, 2);
+          renderMedicaments(data);
           responseArea.style.display = "block";
           uploadStatus.textContent = "Upload successful!";
           uploadStatus.className = "status success";
