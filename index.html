@@ -1,358 +1,725 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>File Upload to Inference Endpoint</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 20px;
-        background-color: #f5f5f5;
-      }
-
-      .container {
-        background-color: white;
-        border-radius: 8px;
-        padding: 30px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-      }
-
-      h1 {
-        color: #333;
-        margin-bottom: 30px;
-      }
-
-      .upload-area {
-        border: 2px dashed #ccc;
-        border-radius: 8px;
-        padding: 40px;
-        text-align: center;
-        cursor: pointer;
-        transition: border-color 0.3s;
-      }
-
-      .upload-area:hover {
-        border-color: #007bff;
-      }
-
-      .upload-area.dragover {
-        border-color: #007bff;
-        background-color: #f0f8ff;
-      }
-
-      .file-input {
-        display: none;
-      }
-
-      .response-area h4 {
-      font-size: 24px;
-      }
-
-      .response-area p {
-       margin: 5px 0;
-       }
-
-      .upload-button {
-        background-color: #007bff;
-        color: white;
-        padding: 10px 20px;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 16px;
-        margin-top: 10px;
-      }
-
-      .upload-button:hover {
-        background-color: #0056b3;
-      }
-
-      .file-info {
-        margin-top: 20px;
-        padding: 15px;
-        background-color: #e9ecef;
-        border-radius: 4px;
-        display: none;
-      }
-
-      .response-area {
-        margin-top: 30px;
-        padding: 20px;
-        background-color: #f8f9fa;
-        border-radius: 4px;
-        border: 1px solid #dee2e6;
-        display: none;
-      }
-
-      .response-area pre {
-        margin: 0;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        max-height: 400px;
-        overflow-y: auto;
-      }
-
-      .loading {
-        display: none;
-        margin: 20px 0;
-        text-align: center;
-      }
-
-      .error {
-        color: #dc3545;
-        margin-top: 10px;
-      }
-
-      .success {
-        color: #28a745;
-      }
-
-      .status {
-        margin-top: 10px;
-        font-weight: bold;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>File Upload to Inference Endpoint</h1>
-
-      <div class="upload-area" id="uploadArea">
-        <p>Drag & drop files here or click to select</p>
-        <p style="color: #666; font-size: 14px">
-          Supports: Images, PDFs, Documents (Max: 50MB)
-        </p>
-        <button class="upload-button" id="selectFileBtn">Select File</button>
-        <input type="file" id="fileInput" class="file-input" />
-      </div>
-
-      <div class="file-info" id="fileInfo">
-        <strong>Selected file:</strong> <span id="fileName"></span><br />
-        <strong>File size:</strong> <span id="fileSize"></span><br />
-        <strong>File type:</strong> <span id="fileType"></span>
-      </div>
-
-      <div class="loading" id="loading">
-        <p>Uploading and processing... ⏳</p>
-        <div class="status" id="uploadStatus"></div>
-      </div>
-
-      <div class="response-area" id="responseArea">
-        <h3>Response from server:</h3>
-        <pre id="responseContent"></pre>
-      </div>
-
-      <div id="errorMessage" class="error"></div>
-    </div>
-
-    <script>
-      const uploadArea = document.getElementById("uploadArea");
-      const fileInput = document.getElementById("fileInput");
-      const selectFileBtn = document.getElementById("selectFileBtn");
-      const fileInfo = document.getElementById("fileInfo");
-      const fileName = document.getElementById("fileName");
-      const fileSize = document.getElementById("fileSize");
-      const fileType = document.getElementById("fileType");
-      const loading = document.getElementById("loading");
-      const responseArea = document.getElementById("responseArea");
-      const responseContent = document.getElementById("responseContent");
-      const errorMessage = document.getElementById("errorMessage");
-      const uploadStatus = document.getElementById("uploadStatus");
-
-      const endpoint = "https://medicine-vision.asqii.tn/infer";
-
-      // Prevent default drag behaviors
-      ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
-        uploadArea.addEventListener(eventName, preventDefaults, false);
-        document.body.addEventListener(eventName, preventDefaults, false);
-      });
-
-      function preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-
-      // Highlight drop area when dragging over it
-      ["dragenter", "dragover"].forEach((eventName) => {
-        uploadArea.addEventListener(eventName, highlight, false);
-      });
-
-      ["dragleave", "drop"].forEach((eventName) => {
-        uploadArea.addEventListener(eventName, unhighlight, false);
-      });
-
-      function highlight() {
-        uploadArea.classList.add("dragover");
-      }
-
-      function unhighlight() {
-        uploadArea.classList.remove("dragover");
-      }
-
-      // Handle dropped files
-      uploadArea.addEventListener("drop", handleDrop, false);
-
-      function handleDrop(e) {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-
-        if (files.length > 0) {
-          handleFiles(files[0]);
-        }
-      }
-
-      // Handle file selection via button/click
-      selectFileBtn.addEventListener("click", () => {
-        fileInput.click();
-      });
-
-      uploadArea.addEventListener("click", () => {
-        fileInput.click();
-      });
-
-      fileInput.addEventListener("change", (e) => {
-        if (e.target.files.length > 0) {
-          handleFiles(e.target.files[0]);
-        }
-      });
-
-      async function handleFiles(file) {
-        // Clear previous responses
-        responseArea.style.display = "none";
-        errorMessage.textContent = "";
-
-        // Check file size (50MB limit)
-        if (file.size > 50 * 1024 * 1024) {
-          errorMessage.textContent = "File too large. Maximum size is 50MB.";
-          return;
-        }
-
-        // Display file info
-        fileName.textContent = file.name;
-        fileSize.textContent = formatFileSize(file.size);
-        fileType.textContent = file.type || "Unknown";
-        fileInfo.style.display = "block";
-
-        // Upload file
-        await uploadFile(file);
-      }
-
-      function renderMedicaments(data) {
-      // Clear previous content
-      responseContent.innerHTML = "";
-
-      if (!data.medicaments || data.medicaments.length === 0) {
-        responseContent.innerHTML = "<p>No medications found.</p>";
-        return;
-      }
-
-      data.medicaments.forEach((item) => {
-      const med = item.result;
-
-      const card = document.createElement("div");
-      card.style.border = "1px solid #ddd";
-      card.style.borderRadius = "6px";
-      card.style.padding = "15px";
-      card.style.marginBottom = "15px";
-      card.style.backgroundColor = "#fff";
-
-      // Format date
-      const date = med["Date AMM"]
-      ? new Date(med["Date AMM"]).toLocaleDateString()
-      : "N/A";
-
-      card.innerHTML = `
-      <h4 style="color: #007bff;">
-        ${med.nom_fr || "Unknown"}
-      </h4>
-      <p style="font:18;"><strong>Forme:</strong> ${med.Forme || "N/A"}</p>
-      <p style="font:18;"><strong>Dosage:</strong> ${med.dosage || "N/A"}</p>
-      <p style="font:18;"><strong>Date AMM:</strong> ${date}</p>
-      `;
-
-      responseContent.appendChild(card);
-      });
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>MediScan AI — Prescription Analysis</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
 
-      async function uploadFile(file) {
-        const formData = new FormData();
-        formData.append("image", file); // Adjust field name as needed by your endpoint
+    body {
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: linear-gradient(145deg, #eef2f7 0%, #d9e0e8 100%);
+      min-height: 100vh;
+      padding: 2rem 1.5rem;
+    }
 
-        loading.style.display = "block";
-        uploadStatus.textContent = "Uploading...";
-        uploadStatus.className = "status";
+    /* main container */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
 
+    /* header card */
+    .header-card {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(2px);
+      border-radius: 2rem;
+      padding: 1.8rem 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+    }
+
+    h1 {
+      font-size: 2.1rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #1a5f8b, #2c8fbb);
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+      letter-spacing: -0.3px;
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    h1::before {
+      content: "💊";
+      font-size: 2rem;
+      background: none;
+      -webkit-background-clip: unset;
+      color: #2c8fbb;
+    }
+
+    .subhead {
+      color: #4a627a;
+      font-size: 1rem;
+      font-weight: 500;
+      border-left: 3px solid #2c8fbb;
+      padding-left: 1rem;
+      margin-top: 0.6rem;
+    }
+
+    /* upload zone — glassmorphism */
+    .upload-card {
+      background: white;
+      border-radius: 1.8rem;
+      box-shadow: 0 20px 35px -12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.2s ease;
+      overflow: hidden;
+    }
+
+    .upload-area {
+      background: #fefefe;
+      border: 2px dashed #bdd4e7;
+      border-radius: 1.5rem;
+      padding: 2.5rem 1.8rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      margin: 1.5rem;
+    }
+
+    .upload-area:hover {
+      border-color: #2c8fbb;
+      background: #f6fafd;
+      transform: scale(0.99);
+    }
+
+    .upload-area.dragover {
+      border-color: #0f6b8c;
+      background: #e3f2f9;
+      box-shadow: inset 0 0 0 2px rgba(44, 143, 187, 0.3);
+    }
+
+    .upload-icon {
+      font-size: 3.2rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .upload-area p:first-of-type {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #1e2f3e;
+      margin-bottom: 8px;
+    }
+
+    .file-hint {
+      color: #6c86a3;
+      font-size: 0.85rem;
+      margin-top: 8px;
+      margin-bottom: 1.2rem;
+    }
+
+    .upload-button {
+      background: linear-gradient(95deg, #1f6e94, #2c8fbb);
+      color: white;
+      border: none;
+      padding: 0.8rem 2rem;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 60px;
+      cursor: pointer;
+      transition: 0.2s;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .upload-button:hover {
+      background: linear-gradient(95deg, #155c7c, #1f7aa3);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.1);
+    }
+
+    .file-input {
+      display: none;
+    }
+
+    /* file info card */
+    .file-info {
+      background: #eef3fc;
+      margin: 0 1.5rem 1.5rem 1.5rem;
+      padding: 1rem 1.4rem;
+      border-radius: 1.2rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.2rem;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.95rem;
+      border-left: 5px solid #2c8fbb;
+    }
+
+    .file-detail {
+      display: flex;
+      gap: 1.2rem;
+      flex-wrap: wrap;
+      row-gap: 0.5rem;
+    }
+
+    .file-detail span {
+      font-weight: 600;
+      color: #1e4a6e;
+    }
+
+    /* loading modern */
+    .loading {
+      background: rgba(255, 255, 255, 0.96);
+      margin: 1rem 1.5rem;
+      padding: 1.5rem;
+      border-radius: 1.5rem;
+      text-align: center;
+      backdrop-filter: blur(4px);
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e2e8f0;
+      border-top: 4px solid #2c8fbb;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 12px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .status {
+      font-weight: 500;
+      font-size: 1rem;
+      color: #2c3e4e;
+    }
+
+    .status.success {
+      color: #1f8a4c;
+    }
+
+    .status.error {
+      color: #c7362b;
+    }
+
+    /* response area — medications grid */
+    .response-area {
+      margin: 1.5rem;
+      background: #ffffff;
+      border-radius: 1.5rem;
+      padding: 1.2rem;
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.05);
+    }
+
+    .response-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 2px solid #e2edf7;
+      padding-bottom: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .response-header h3 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      background: linear-gradient(120deg, #194e6b, #2580a8);
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+
+    .med-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+
+    /* medication card premium */
+    .med-card {
+      background: #ffffff;
+      border-radius: 1.2rem;
+      border: 1px solid #e9f0f5;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+      overflow: hidden;
+    }
+
+    .med-card:hover {
+      border-color: #cde3f0;
+      box-shadow: 0 12px 20px -12px rgba(0, 0, 0, 0.12);
+      transform: translateY(-2px);
+    }
+
+    .med-card-header {
+      background: #fafdff;
+      padding: 1.2rem 1.4rem;
+      border-bottom: 1px solid #ecf3f9;
+    }
+
+    .med-name {
+      font-size: 1.65rem;
+      font-weight: 800;
+      letter-spacing: -0.2px;
+      color: #115277;
+      line-height: 1.3;
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+
+    .med-badge {
+      font-size: 0.7rem;
+      background: #ecf9f0;
+      color: #196f3d;
+      padding: 0.2rem 0.8rem;
+      border-radius: 50px;
+      font-weight: 600;
+    }
+
+    .med-details {
+      padding: 1.2rem 1.4rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.8rem;
+      row-gap: 1rem;
+      background: #ffffff;
+    }
+
+    .detail-item {
+      flex: 1;
+      min-width: 160px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      font-size: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .detail-label {
+      font-weight: 700;
+      color: #2c5f8a;
+      background: #eef3fc;
+      padding: 0.2rem 0.7rem;
+      border-radius: 40px;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .detail-value {
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: #1b2f44;
+      word-break: break-word;
+    }
+
+    .no-meds {
+      background: #fff6e0;
+      border-radius: 1.2rem;
+      padding: 2rem;
+      text-align: center;
+      color: #b26700;
+      font-weight: 500;
+      font-size: 1.1rem;
+    }
+
+    .error-message {
+      margin: 0.5rem 1.5rem 1.2rem 1.5rem;
+      padding: 0.8rem 1rem;
+      background: #ffe6e5;
+      border-left: 5px solid #c7362b;
+      border-radius: 1rem;
+      color: #a1221a;
+      font-weight: 500;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: #5b6f86;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 1rem;
+      }
+      .med-name {
+        font-size: 1.35rem;
+      }
+      .detail-value {
+        font-size: 0.95rem;
+      }
+      .upload-area p:first-of-type {
+        font-size: 1.1rem;
+      }
+      .response-header h3 {
+        font-size: 1.3rem;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header-card">
+    <h1>MediScan AI · Inference Portal</h1>
+    <div class="subhead">Upload prescription, box image, or medical document → AI extracts medication details</div>
+  </div>
+
+  <div class="upload-card">
+    <div class="upload-area" id="uploadArea">
+      <div class="upload-icon">📄📸</div>
+      <p>Drag & drop your medical file</p>
+      <p class="file-hint">PNG, JPG, PDF, or document up to 50MB</p>
+      <button class="upload-button" id="selectFileBtn" type="button">➕ Select file</button>
+      <input type="file" id="fileInput" class="file-input" accept="image/*,application/pdf,.doc,.docx,.txt" />
+    </div>
+
+    <div class="file-info" id="fileInfo" style="display: none;">
+      <div class="file-detail">
+        <span>📎 File:</span> <span id="fileName"></span>
+        <span>⚖️ Size:</span> <span id="fileSize"></span>
+        <span>🏷️ Type:</span> <span id="fileType"></span>
+      </div>
+    </div>
+
+    <div class="loading" id="loading" style="display: none;">
+      <div class="spinner"></div>
+      <div class="status" id="uploadStatus">Processing your document ...</div>
+    </div>
+
+    <div class="response-area" id="responseArea" style="display: none;">
+      <div class="response-header">
+        <span>🔬</span>
+        <h3>📋 Detected Medications</h3>
+      </div>
+      <div id="responseContent" class="med-grid"></div>
+    </div>
+
+    <div id="errorMessage" class="error-message" style="display: none;"></div>
+  </div>
+  <footer>⚕️ Secure inference — your file is analyzed by Medicine Vision AI</footer>
+</div>
+
+<script>
+  // DOM elements
+  const uploadArea = document.getElementById("uploadArea");
+  const fileInput = document.getElementById("fileInput");
+  const selectFileBtn = document.getElementById("selectFileBtn");
+  const fileInfoDiv = document.getElementById("fileInfo");
+  const fileNameSpan = document.getElementById("fileName");
+  const fileSizeSpan = document.getElementById("fileSize");
+  const fileTypeSpan = document.getElementById("fileType");
+  const loadingDiv = document.getElementById("loading");
+  const responseArea = document.getElementById("responseArea");
+  const responseContent = document.getElementById("responseContent");
+  const errorMessageDiv = document.getElementById("errorMessage");
+  const uploadStatusSpan = document.getElementById("uploadStatus");
+
+  const ENDPOINT = "https://medicine-vision.asqii.tn/infer";
+
+  // Helper: prevent default drag behaviors
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  ["dragenter", "dragover", "dragleave", "drop"].forEach(ev => {
+    uploadArea.addEventListener(ev, preventDefaults, false);
+    document.body.addEventListener(ev, preventDefaults, false);
+  });
+
+  // Highlight & unhighlight
+  ["dragenter", "dragover"].forEach(ev => {
+    uploadArea.addEventListener(ev, () => uploadArea.classList.add("dragover"), false);
+  });
+  ["dragleave", "drop"].forEach(ev => {
+    uploadArea.addEventListener(ev, () => uploadArea.classList.remove("dragover"), false);
+  });
+
+  // Drop handler
+  uploadArea.addEventListener("drop", (e) => {
+    const files = e.dataTransfer.files;
+    if (files.length) handleFiles(files[0]);
+  });
+
+  selectFileBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+  uploadArea.addEventListener("click", (e) => {
+    if (e.target === uploadArea || e.target.closest('.upload-area')) {
+      fileInput.click();
+    }
+  });
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files.length) handleFiles(e.target.files[0]);
+  });
+
+  // reset UI before new upload
+  function resetUI() {
+    errorMessageDiv.style.display = "none";
+    errorMessageDiv.textContent = "";
+    responseArea.style.display = "none";
+    responseContent.innerHTML = "";
+    loadingDiv.style.display = "none";
+    uploadStatusSpan.className = "status";
+    uploadStatusSpan.textContent = "";
+    fileInfoDiv.style.display = "none";
+  }
+
+  // Format file size
+  function formatFileSize(bytes) {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }
+
+  // Core: handle selected file
+  async function handleFiles(file) {
+    resetUI();
+
+    // size check 50MB
+    if (file.size > 50 * 1024 * 1024) {
+      showError("File exceeds 50MB limit. Please choose a smaller file.");
+      return;
+    }
+
+    // show file info
+    fileNameSpan.textContent = file.name;
+    fileSizeSpan.textContent = formatFileSize(file.size);
+    fileTypeSpan.textContent = file.type || "application/octet-stream";
+    fileInfoDiv.style.display = "flex";
+
+    // start upload
+    await uploadFile(file);
+  }
+
+  // Enhanced render function: bigger fonts, structured cards, nice visuals
+  function renderMedicaments(data) {
+    responseContent.innerHTML = "";
+
+    // Check for medicaments field (array)
+    let medications = [];
+    if (data && data.medicaments && Array.isArray(data.medicaments)) {
+      medications = data.medicaments;
+    } else if (data && data.results && Array.isArray(data.results)) {
+      // fallback if API uses different key
+      medications = data.results;
+    } else if (data && typeof data === "object") {
+      // If single object without array, try to wrap
+      if (data.nom_fr || data.Forme || data.dosage) {
+        medications = [{ result: data }];
+      }
+    }
+
+    if (!medications.length) {
+      const noResultDiv = document.createElement("div");
+      noResultDiv.className = "no-meds";
+      noResultDiv.innerHTML = "🧐 No medications were identified from this file.<br>Try another image or document with clearer text.";
+      responseContent.appendChild(noResultDiv);
+      return;
+    }
+
+    // Create grid container (flex column cards)
+    const medGrid = document.createElement("div");
+    medGrid.className = "med-grid";
+
+    for (let i = 0; i < medications.length; i++) {
+      const entry = medications[i];
+      // support both { result: {...} } and direct medication object
+      let med = entry.result || entry;
+      if (!med || typeof med !== "object") continue;
+
+      // Extract fields safely
+      const brandName = med.nom_fr || med.brand_name || med.name || "Medicament";
+      const form = med.Forme || med.form || med.forme || "Not specified";
+      const dosage = med.dosage || med.strength || "—";
+      let dateAmm = med["Date AMM"] || med.date_amm || med.approval_date || null;
+      let formattedDate = "N/A";
+      if (dateAmm) {
         try {
-          console.log("Uploading file:", file.name);
-          console.log("File size:", formatFileSize(file.size));
-          console.log("File type:", file.type);
+          const d = new Date(dateAmm);
+          if (!isNaN(d.getTime())) formattedDate = d.toLocaleDateString("fr-FR", { year: 'numeric', month: 'long', day: 'numeric' });
+          else formattedDate = String(dateAmm);
+        } catch(e) { formattedDate = String(dateAmm); }
+      }
 
-          const response = await fetch(endpoint, {
-            method: "POST",
-            body: formData,
-          });
+      // additional fields bonus: active ingredient, labo if present
+      const activeIng = med.active_ingredient || med.substance || "";
+      const labo = med.laboratory || med.lab || "";
 
-          uploadStatus.textContent = "Processing response...";
+      // Build card DOM with enhanced typography
+      const card = document.createElement("div");
+      card.className = "med-card";
 
-          console.log("Response status:", response.status);
-          console.log("Response headers:", [...response.headers.entries()]);
+      // header with name + badge
+      const cardHeader = document.createElement("div");
+      cardHeader.className = "med-card-header";
+      const nameWrapper = document.createElement("div");
+      nameWrapper.className = "med-name";
+      nameWrapper.innerHTML = `
+        <span>${escapeHtml(brandName)}</span>
+        <span class="med-badge">💊 AMM</span>
+      `;
+      cardHeader.appendChild(nameWrapper);
 
-          let data;
-          const contentType = response.headers.get("content-type");
+      // details container
+      const detailsDiv = document.createElement("div");
+      detailsDiv.className = "med-details";
 
-          if (contentType && contentType.includes("application/json")) {
-            data = await response.json();
-          } else {
-            // If not JSON, get as text
-            const text = await response.text();
-            try {
-              // Try to parse as JSON anyway
-              data = JSON.parse(text);
-            } catch {
-              data = { message: text };
-            }
-          }
+      // row 1: Forme
+      const formItem = createDetailItem("📦 Forme pharmaceutique", form);
+      // row 2: Dosage
+      const dosageItem = createDetailItem("⚡ Dosage", dosage);
+      // row 3: Date AMM
+      const dateItem = createDetailItem("📅 Date AMM", formattedDate);
 
-          if (!response.ok) {
-            throw new Error(
-              data.error || `HTTP error! status: ${response.status}`,
-            );
-          }
+      detailsDiv.appendChild(formItem);
+      detailsDiv.appendChild(dosageItem);
+      detailsDiv.appendChild(dateItem);
 
-          // Display success response
-          console.log("Response data:", data);
-          renderMedicaments(data);
-          responseArea.style.display = "block";
-          uploadStatus.textContent = "Upload successful!";
-          uploadStatus.className = "status success";
-        } catch (error) {
-          console.error("Error:", error);
-          errorMessage.textContent = `Error: ${error.message}`;
-          uploadStatus.textContent = "Upload failed";
-          uploadStatus.className = "status error";
+      // optional active ingredient
+      if (activeIng && activeIng.trim() !== "") {
+        const activeItem = createDetailItem("🧪 Substance active", activeIng);
+        detailsDiv.appendChild(activeItem);
+      }
+      // optional lab
+      if (labo && labo.trim() !== "") {
+        const labItem = createDetailItem("🏭 Laboratoire", labo);
+        detailsDiv.appendChild(labItem);
+      }
 
-          // Show error in response area as well
-          responseContent.textContent = JSON.stringify(
-            { error: error.message },
-            null,
-            2,
-          );
-          responseArea.style.display = "block";
-        } finally {
-          loading.style.display = "none";
+      card.appendChild(cardHeader);
+      card.appendChild(detailsDiv);
+      medGrid.appendChild(card);
+    }
+
+    if (medGrid.children.length === 0) {
+      const fallbackMsg = document.createElement("div");
+      fallbackMsg.className = "no-meds";
+      fallbackMsg.innerText = "Unable to parse medication information from server response.";
+      responseContent.appendChild(fallbackMsg);
+    } else {
+      responseContent.appendChild(medGrid);
+    }
+  }
+
+  // Helper to create nice detail item (label + value)
+  function createDetailItem(label, value) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "detail-item";
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "detail-label";
+    labelSpan.innerText = label;
+    const valueSpan = document.createElement("span");
+    valueSpan.className = "detail-value";
+    valueSpan.innerText = value || "—";
+    wrapper.appendChild(labelSpan);
+    wrapper.appendChild(valueSpan);
+    return wrapper;
+  }
+
+  // simple escape to avoid XSS
+  function escapeHtml(str) {
+    if (!str) return "";
+    return str.replace(/[&<>]/g, function(m) {
+      if (m === '&') return '&amp;';
+      if (m === '<') return '&lt;';
+      if (m === '>') return '&gt;';
+      return m;
+    }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+      return c;
+    });
+  }
+
+  async function uploadFile(file) {
+    const formData = new FormData();
+    // Use field name "image" as original code; supports typical inference endpoint
+    formData.append("image", file);
+
+    loadingDiv.style.display = "block";
+    uploadStatusSpan.textContent = "Uploading image & requesting AI analysis...";
+    uploadStatusSpan.className = "status";
+
+    try {
+      console.log("Uploading to endpoint:", ENDPOINT);
+      const response = await fetch(ENDPOINT, {
+        method: "POST",
+        body: formData,
+      });
+
+      uploadStatusSpan.textContent = "Analyzing prescription, please wait...";
+
+      let rawData = null;
+      const contentType = response.headers.get("content-type") || "";
+      let responseData = null;
+
+      if (contentType.includes("application/json")) {
+        responseData = await response.json();
+        rawData = responseData;
+      } else {
+        const textRaw = await response.text();
+        try {
+          responseData = JSON.parse(textRaw);
+          rawData = responseData;
+        } catch (jsonErr) {
+          rawData = { message: textRaw, raw: textRaw };
         }
       }
 
-      function formatFileSize(bytes) {
-        if (bytes === 0) return "0 Bytes";
-        const k = 1024;
-        const sizes = ["Bytes", "KB", "MB", "GB"];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+      if (!response.ok) {
+        let errMsg = rawData?.error || rawData?.message || `Server responded with status ${response.status}`;
+        throw new Error(errMsg);
       }
-    </script>
-  </body>
+
+      // successful response => render with better display
+      console.log("Inference success", rawData);
+      renderMedicaments(rawData);
+      responseArea.style.display = "block";
+      uploadStatusSpan.textContent = "✅ Analysis complete!";
+      uploadStatusSpan.className = "status success";
+      // scroll to results
+      responseArea.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      console.error("Upload error:", err);
+      let friendlyError = err.message || "Network error or server unavailable.";
+      if (friendlyError.includes("Failed to fetch")) {
+        friendlyError = "Cannot reach inference server. Please check your connection or endpoint availability.";
+      }
+      showError(friendlyError);
+      uploadStatusSpan.textContent = "❌ Upload failed";
+      uploadStatusSpan.className = "status error";
+      // Optionally show error in response area with fallback
+      responseContent.innerHTML = `<div class="no-meds" style="background:#ffeaea;">⚠️ Error: ${escapeHtml(friendlyError)}<br>Please try again later.</div>`;
+      responseArea.style.display = "block";
+    } finally {
+      loadingDiv.style.display = "none";
+    }
+  }
+
+  function showError(msg) {
+    errorMessageDiv.textContent = msg;
+    errorMessageDiv.style.display = "block";
+    setTimeout(() => {
+      if (errorMessageDiv.style.display === "block") {
+        // keep visible but user may dismiss after new upload, reset handled anyway
+      }
+    }, 3000);
+  }
+</script>
+</body>
 </html>
